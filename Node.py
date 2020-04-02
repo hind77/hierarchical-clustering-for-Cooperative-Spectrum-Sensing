@@ -3,19 +3,16 @@
 # =============================================================================
 # ********************************* import libraries*****************************
 # =============================================================================
-import socket 
-import pickle
+
 import numpy as np
-import numpy as np
-import seaborn
 import itertools
+import random as rand
 import time
-from pylab import *
+from pylab import pi
 import math
 from scipy import special as sp
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import threading
 from itertools import cycle
 from mpl_toolkits.mplot3d import Axes3D
 import scipy.cluster.hierarchy as sch
@@ -27,10 +24,12 @@ from sklearn.cluster import KMeans
 # =============================================================================
 
 #--------------Signal Processing-------------------------
-snr_dB = -10  
+snr_dB = np.arange(-15, 15, 1)
 snr = pow(10,(snr_dB/10)) #Linear value of SNR 
+fc = 2*pow(10,9)
 L = 1000 #Number of samples
-s = math.sqrt(snr)*np.random.randn(L) 
+N0 = 1/snr 
+s = np.ones(L) 
 pf = np.arange(0, 1, 0.05)# probability of false alarm 
 all_nodes_pd = np.arange(0, 1, 0.05)
 pd = np.arange(0, 1, 0.05)# probability of detection
@@ -131,15 +130,21 @@ def Kmeans_clustering(number_of_nodes,positions, number_clusters):
 # =============================================================================
 # ************************** generate the signals *********************************
 # =============================================================================
-def generate_Pu_signal(distance):
+def generate_Pu_signal(distance, attempt):
     #AWGN noise with mean 0 and variance 1
-    n = np.random.randn(L)
+#    n = np.random.randn(L)
+    n = np.random.normal(0,N0) 
     # speed of light
     c = 3*pow(10,8)
     # free space math loss formula
-    h = pow((c/4*math.pi*distance*L),2)
+    h = pow((c/(4*math.pi*fc*distance)),2)
     # the addition of the signal and noise samples
-    y = h*s+n
+    if attempt> 0.5:
+        y = h*s+n
+    else:
+        y = n
+    print ("attempt is: ",attempt)
+    
     return y
 # =============================================================================
 # ************************** Node class *********************************
@@ -183,10 +188,12 @@ class Node():
           # get the threshs
           threshs = mapping_thresh(pf[m],distances)
           print(threshs)
+          #get the attempt probability 
+          attempt = rand.uniform(0, 1)
           # starting the montecarlo simulation 
           while Round < 100:
               # generate the local statistic tests 
-              local_statistics = Local_Statistics_mapping(self.number_of_nodes,distances)
+              local_statistics = Local_Statistics_mapping(self.number_of_nodes,distances, attempt)
               all_nodes_Statistics_test = sum(list(local_statistics.values()))/self.number_of_nodes
               # compute all nodes average thresh 
               thresh = get_moyenn_thresh(threshs)
@@ -360,10 +367,10 @@ def mapping_thresh(pf,distances):
         val = 1-2*pf
         thresh[k] = (((math.sqrt(2)*sp.erfinv(val))/ math.sqrt(L))+1)+0.01*L*pow(v/100,2)
     return thresh    
-def Local_Statistics_mapping(nodes,distances):
+def Local_Statistics_mapping(nodes,distances, attempt):
     signal_mapping = dict()
     for k,v in distances.items():
-        y = generate_Pu_signal(v)
+        y = generate_Pu_signal(v,attempt)
         energy = pow(abs(y),2)
         # generate the statistic_test
         Statistic_test = np.sum(energy)*(1/L)
