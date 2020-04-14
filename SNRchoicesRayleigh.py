@@ -113,7 +113,7 @@ for i in range(0,len(snr)):
 # simulation plots
 ax = plt.axes()    
 for k,v in snr_data.items():
-    ax.plot(pf,v, linestyle='dashed',label=snr_values[k])
+    ax.plot(pf,v[0], linestyle='dashed',label=snr_values[k])
 ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)    
 ax.set_xticks(np.arange(0,1,step=0.1))
 ax.set_yticks(np.arange(0,1,step=0.05))

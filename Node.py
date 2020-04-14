@@ -24,12 +24,15 @@ from sklearn.cluster import KMeans
 # =============================================================================
 
 #--------------Signal Processing-------------------------
-snr_dB = np.arange(-15, 15, 1)
+snr_dB = -9
 snr = pow(10,(snr_dB/10)) #Linear value of SNR 
 fc = 2*pow(10,9)
 L = 1000 #Number of samples
 N0 = 1/snr 
-s = np.ones(L) 
+#           Generating 0 and 1 with equal probability for BPSK
+mes = np.random.randint(0,2, L)
+#           BPSK modulation
+s = 2*(mes)-1
 pf = np.arange(0, 1, 0.05)# probability of false alarm 
 all_nodes_pd = np.arange(0, 1, 0.05)
 pd = np.arange(0, 1, 0.05)# probability of detection
@@ -77,43 +80,15 @@ def Compute_distance_from_PU(position):
 # =============================================================================
 # ************************** Hiarchical Clustering *********************************
 # =============================================================================
-def hiarchical_clustering(number_of_nodes,positions):    
-#   get the linkage matrix 
-    z = sch.linkage(positions, method = 'ward')
-#   extract the threshold_distance 
-    sum_matrix = [sum(x) for x in zip(*z)]
-    threshold_distance = int (sum_matrix[2]/number_of_nodes)
-#   extract the limit number of cluster
-    dendrogrm = sch.dendrogram(z,no_plot=True)
-    colors = removeDuplicates(dendrogrm['color_list'])
-    col_mapping = dict()
-    for i in range(0,len(colors)):
-        col_mapping[colors[i]] = dendrogrm['color_list'].count(colors[i])
-    clusters_nb = len(colors)+1
-#   Extract the clusters
-    clusters = z[:,:2]
-    clusters = [[ele for ele in sub if ele <10] for sub in clusters] 
-    clusters = [x for x in clusters if x != []]
-    mapping = list()
-    for i in range(0,len(dendrogrm['leaves'])):
-        for j in range(0,len(clusters)):
-            if float(dendrogrm['leaves'][i]) in clusters[j]:
-                if clusters[j] not in mapping:
-                    mapping.append(clusters[j])
-    clustering_results = dict() 
-    cluster_jumps = int(len(mapping)/clusters_nb)
-    r = 0
-    for k in range(0,clusters_nb):
-        for n in range(0,cluster_jumps):
-            lis = []
-            lis.append(mapping[n+r])
-            clustering_results[k]=lis
-            r += 1
-    for s,v in clustering_results.items():
-        if s == k-1:
-            for j in range(r,len(mapping)):
-                v.append(mapping[j])
-    return clustering_results
+def hiarchical_clustering(number_of_nodes,positions,number_clusters):    
+   cluster = AgglomerativeClustering(n_clusters=number_clusters, affinity='euclidean', linkage='ward')
+   cluster.fit_predict(positions)
+   labels = cluster.labels_
+
+   clustering = {k: [] for k in range(number_clusters)}
+   for i in range(0,len(labels)):
+       clustering[labels[i]].append(i)
+   return clustering
 
 # =============================================================================
 # ************************** Kmeans Clustering *********************************
@@ -132,18 +107,9 @@ def Kmeans_clustering(number_of_nodes,positions, number_clusters):
 # =============================================================================
 def generate_Pu_signal(distance, attempt):
     #AWGN noise with mean 0 and variance 1
-#    n = np.random.randn(L)
-    n = np.random.normal(0,N0) 
-    # speed of light
-    c = 3*pow(10,8)
-    # free space math loss formula
-    h = pow((c/(4*math.pi*fc*distance)),2)
-    # the addition of the signal and noise samples
-    if attempt> 0.5:
-        y = h*s+n
-    else:
-        y = n
-    print ("attempt is: ",attempt)
+    h = np.random.normal(0,0.5,L)+np.random.normal(0,0.5,L)  
+    n = np.random.normal(0,1,L) 
+    y = math.sqrt(snr)*abs(h)*s+n
     
     return y
 # =============================================================================
@@ -158,10 +124,10 @@ class Node():
                   position = Deep_walk()
                   positions.append(position[0])
       # get the Clusters from Hiarchical clustering 
-      clustering = hiarchical_clustering(self.number_of_nodes,positions)
+      clustering = hiarchical_clustering(self.number_of_nodes,positions,4)
       print("\n the hirachical clusters are: ",clustering)
       # get the clusters from K-means clustering
-      kmeans_clustering = Kmeans_clustering(self.number_of_nodes,positions,10)
+      kmeans_clustering = Kmeans_clustering(self.number_of_nodes,positions,4)
       print("\n the kmeans clusters are: ",kmeans_clustering)
       # get the distances from the PU 
       distances = mapping_distances(positions)
@@ -191,7 +157,7 @@ class Node():
           #get the attempt probability 
           attempt = rand.uniform(0, 1)
           # starting the montecarlo simulation 
-          while Round < 100:
+          while Round < 10000:
               # generate the local statistic tests 
               local_statistics = Local_Statistics_mapping(self.number_of_nodes,distances, attempt)
               all_nodes_Statistics_test = sum(list(local_statistics.values()))/self.number_of_nodes
@@ -210,9 +176,9 @@ class Node():
               for k,v in clustering.items():
                   lst = []
                   for r,s in local_statistics.items():
-                      for i in range(0,len(v[0])):
-                          lst.append(local_statistics[int(v[0][i])])
-                      cluster_intra_data[k]= sum(lst)/len(v[0])
+                      for i in range(0,len(v)):
+                          lst.append(local_statistics[int(v[i])])
+                      cluster_intra_data[k]= sum(lst)/len(v)
                       lst.clear() 
               # generate the K-means intra-clustering data
               kmeans_cluster_intra_data = dict()
@@ -250,8 +216,8 @@ class Node():
               #hiarchical decision mapping
               Hc_mapping = dict()
               for k,v in clustering.items():
-                  for i in range(0,len(v[0])):
-                      Hc_mapping[int(v[0][i])]= cluster_inter_data[k]   
+                  for i in range(0,len(v)):
+                      Hc_mapping[int(v[i])]= cluster_inter_data[k]   
               for k,v in Hc_mapping.items():
                   if v > threshs[k]:
                       decisions_HC_mapping[k].append(1)
@@ -308,28 +274,37 @@ class Node():
           #k-means results for Pd
           for k,v in decisions_kmeans_mapping.items(): 
              kmeans_pd[k].append(sum(v)/Round) 
+             
+      hierchical_pd_average = list()
+      for i in range(0,len(pf)):
+          liste = list()
+          for k,v in Hc_pd.items():              
+              liste.append(v[i])
+          hierchical_pd_average.append(sum(liste)/len(liste))
+      kmeans_pd_average = list()
+      for i in range(0,len(pf)):
+          liste = list()
+          for k,v in kmeans_pd.items():              
+              liste.append(v[i])
+          kmeans_pd_average.append(sum(liste)/len(liste))          
 #******************************** pf vs pd plotting *****************************************
       # final nodes Evaluation results plotting 
-      for k,v in local_pd.items():
-          plt.figure(1)
-          ax = plt.axes()
-          ax.set_xticks(np.arange(0,1,step=0.1))
-          ax.set_yticks(np.arange(0,1,step=0.05))
-          ax.plot(pf,kmeans_pd[k], linestyle='solid', color='black',marker=">")
-          ax.plot(pf,Hc_pd[k], linestyle='dashed', color='red',marker=">")
-          ax.plot(pf,v, linestyle='dashed', color='blue',marker=">")
-          ax.plot(pf,all_nodes_pd,  linestyle='dashed', color='orange',marker=">")
-          ax.set_title('Pf Vs Pd for node %d' % (k))
-          ax.margins(x=0)
-          black_patch = mpatches.Patch(color='black', label='kmeans clustering probability of detection')
-          red_patch = mpatches.Patch(color='red', label='Hiarchical clustering probability of detection')
-          blue_patch = mpatches.Patch(color='blue', label='local probability of detection')
-          orange_patch = mpatches.Patch(color='orange', label='cooperative probability of detection')
-          plt.legend(handles=[blue_patch,red_patch,orange_patch,black_patch])
-          ax.set_xlabel("Probability of false alarm (Pf)")
-          ax.set_ylabel("Probability of detection (Pd)")
-          plt.show()
-          plt.pause(0.05)
+      plt.figure(2)
+      ax = plt.axes()
+      ax.set_xticks(np.arange(0,1,step=0.1))
+      ax.set_yticks(np.arange(0,1,step=0.05))
+      ax.plot(pf,kmeans_pd_average, linestyle='dashed', color='black',marker=">",label='kmeans clustering probability of detection')
+      ax.plot(pf,hierchical_pd_average, linestyle='solid', color='red',marker=">", label='Hiarchical clustering probability of detection')
+      ax.plot(pf,local_pd[1], linestyle='dashed', color='blue',marker=">", label='local probability of detection')
+      ax.plot(pf,all_nodes_pd,  linestyle='solid', color='orange',marker=">", label='cooperative probability of detection')
+      ax.set_title('Pf Vs Pd with SNR = -9 ' )
+      ax.margins(x=0,y=0)
+      ax.grid(True)
+      plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
+      ax.set_xlabel("Probability of false alarm (Pf)")
+      ax.set_ylabel("Probability of detection (Pd)")
+      plt.show()
+      plt.pause(0.05)
           
           
               
@@ -365,7 +340,7 @@ def mapping_thresh(pf,distances):
     thresh = dict()
     for k,v in distances.items():
         val = 1-2*pf
-        thresh[k] = (((math.sqrt(2)*sp.erfinv(val))/ math.sqrt(L))+1)+0.01*L*pow(v/100,2)
+        thresh[k] = 2*sp.gammaincinv(L/2,1-pf)/L
     return thresh    
 def Local_Statistics_mapping(nodes,distances, attempt):
     signal_mapping = dict()
