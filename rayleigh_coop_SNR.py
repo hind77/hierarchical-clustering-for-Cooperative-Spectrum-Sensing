@@ -1,17 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Apr 14 12:24:16 2020
-
-@author: hind
-"""
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Apr  9 13:34:08 2020
-
-@author: hind
-"""
 
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
