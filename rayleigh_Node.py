@@ -30,7 +30,7 @@ import pdb
 # =============================================================================
 
 #--------------Signal Processing-------------------------
-snr_dB = -7
+snr_dB = -5
 snr = pow(10,(snr_dB/10)) #Linear value of SNR 
 fc = 2*pow(10,9)
 L = 1000 #Number of samples
@@ -45,7 +45,7 @@ all_nodes_simulation_pd = np.arange(0, 1, 0.05)
 all_nodes_simulation_pf = np.arange(0, 1, 0.05)
 pd = np.arange(0, 1, 0.05)# probability of detection
 Cpd = np.arange(0, 1, 0.05)# Cooperative probability of detection
-thresh = [None] * len(pf) # the threshold
+
 Round = 0 #number of Rounds ==> monte carlo number 
 Consensus_iters = 0
 #--------------Deep walk initilizations-------------------------
@@ -138,7 +138,7 @@ class Node():
       clustering = hiarchical_clustering(self.number_of_nodes,positions,3)
       print("\n the hirachical clusters are: ",clustering)
       # get the clusters from K-means clustering
-      kmeans_clustering = Kmeans_clustering(self.number_of_nodes,positions,5)
+      kmeans_clustering = Kmeans_clustering(self.number_of_nodes,positions,3)
       print("\n the kmeans clusters are: ",kmeans_clustering)
       # get the distances from the PU 
       distances = mapping_distances(positions)
@@ -179,8 +179,11 @@ class Node():
           cons_static = []
           cons_kmeans_static = []
           cons_coop_static =[]
+          thresh_CFAR = ((math.sqrt(2)*sp.erfcinv(2*pf[m])*math.sqrt(1/L))+1)
+          
+          print("this is the issue thresh", thresh_CFAR)
           # get the threshs
-          threshs = mapping_thresh(pf[m],distances)
+          threshs = mapping_thresh(pf[m],distances,thresh_CFAR)
 
           #get the attempt probability 
           attempt = rand.uniform(0, 1)
@@ -402,7 +405,7 @@ class Node():
       ax.plot(pf,hierchical_simulated_pd_average, linestyle='dashed', color='red',marker=">",label='Hiarchical clustering probability of detection')
       ax.plot(pf,local_simulation_pd[1], linestyle='dashed', color='blue',marker=">",label='local probability of detection')
       ax.plot(pf,coop_simulated_pd_average,  linestyle='dashed', color='orange',marker=">",label='cooperative probability of detection')
-      ax.set_title('Pf Vs Pd ' )
+      ax.set_title('Pf Vs Pd using Adaptive Threshold')
       ax.margins(x=0,y=0)
       ax.grid(True)
       plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0.)
@@ -455,11 +458,13 @@ def mapping_distances(positions):
         lis.clear()
     return distances
 
-def mapping_thresh(pf,distances):
+def mapping_thresh(pf,distances,thresh_CFAR):
     thresh = dict()
     for k,v in distances.items():
-        thresh[k] = 2*sp.gammaincinv(L/2,1-pf)/L
+        thresh[k] = gsection(compute_PDray, thresh_CFAR*0.9, thresh_CFAR  , thresh_CFAR*1.1 , tol = 1e-9)
     return thresh
+
+
     
 def Local_Statistics_mapping(nodes,distances, attempt):
     signal_mapping = dict()
@@ -479,4 +484,40 @@ def generate_local_decisions(local_statistics_mapping,thresh,node_number):
             decisions_mapping[k].append(0)
     return decisions_mapping
 
+def compute_PDray(th):
+    
+    first_part = 0.5*sp.erfc((th*math.sqrt(L)-math.sqrt(L))/math.sqrt(2))
+    second_part = math.exp((1/2*L*pow(th,2)*pow(snr,2))-((th-1)/th*snr))
+    third_part = 0.5*sp.erfc((math.sqrt(1/L)*(1/th*snr)-th*math.sqrt(L)+math.sqrt(L))/math.sqrt(2))
+    return first_part+second_part*third_part
+
+def gsection(compute_PDray, thresh_lower, thresh, thresh_upper, tol = 1e-9):
+    gr1 = 1 + (1 + np.sqrt(5))/2
+    fl = compute_PDray(thresh_lower)
+    fr = compute_PDray(thresh_upper)
+    fm = compute_PDray(thresh)
+    while ((thresh_upper - thresh_lower) > tol):
+        if ((thresh_upper - thresh) > (thresh - thresh_lower)):
+            y = thresh + (thresh_upper - thresh)/gr1
+            fy = compute_PDray(y)
+            if (fy >= fm):
+                thresh_lower = thresh
+                fl = fm
+                thresh = y
+                fm = fy
+            else:
+                thresh_upper = y
+                fr = fy
+        else:
+            y = thresh - (thresh - thresh_lower)/gr1
+            fy = compute_PDray(y)
+            if (fy >= fm):
+                thresh_upper = thresh
+                fr = fm
+                thresh = y
+                fm = fy
+            else:
+                thresh_lower = y
+                fl = fy
+    return(thresh)
         

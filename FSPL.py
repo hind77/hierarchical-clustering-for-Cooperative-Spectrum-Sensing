@@ -120,19 +120,15 @@ def Kmeans_clustering(number_of_nodes,positions, number_clusters):
 # =============================================================================
 # ************************** generate the signals *********************************
 # =============================================================================
-def generate_Pu_signal(distance, attempt):
+def generate_Pu_signal(distance, attempt, hi):
     #AWGN noise with mean 0 and variance 1
 #    Generating Rayleigh channel coefficient
     n = np.random.normal(0,1,L)  
 #            print("this is NO",N0)              
-    # speed of light
-    c = 3*pow(10,8)
-    # free space math loss formula
-    o= c/(4*math.pi*fc*distance)
-    h = pow(o,2)
-    
+    snr = abs(hi)*pow(distance,-2)
+
     if attempt> 0.5:
-        y = math.sqrt(snr)*abs(h)*s+n
+        y = math.sqrt(snr)*s+n
     else:
         y = n    
     return y
@@ -148,10 +144,10 @@ class Node():
                   position = Deep_walk()
                   positions.append(position[0])
       # get the Clusters from Hiarchical clustering 
-      clustering = hiarchical_clustering(self.number_of_nodes,positions,6)
+      clustering = hiarchical_clustering(self.number_of_nodes,positions,4)
       print("\n the hirachical clusters are: ",clustering)
       # get the clusters from K-means clustering
-      kmeans_clustering = Kmeans_clustering(self.number_of_nodes,positions,3)
+      kmeans_clustering = Kmeans_clustering(self.number_of_nodes,positions,7)
       print("\n the kmeans clusters are: ",kmeans_clustering)
       # get the distances from the PU 
 #      distances = mapping_distances(positions)
@@ -209,9 +205,11 @@ class Node():
                   active_rounds = active_rounds + 1
               else:
                   passive_rounds = passive_rounds + 1
-                  
+              # generate canal coefs
+              hi = generate_hi(self.number_of_nodes)
+              
               # generate the local statistic tests 
-              local_statistics = Local_Statistics_mapping(self.number_of_nodes,distances, attempt) 
+              local_statistics = Local_Statistics_mapping(self.number_of_nodes,distances, attempt,hi) 
               # generate the consensus results for all nodes participation
               sigma_all_nodes = 0             
               for k,v in local_statistics.items():                      
@@ -476,13 +474,13 @@ def mapping_thresh(pf,distances):
     thresh = dict()
     val = 1-2*pf            
     for k,v in distances.items():
-        thresh[k] = (((math.sqrt(2)*sp.erfinv(val))/ math.sqrt(L))+1)+0.01*L*pow(v/1100,2)
+        thresh[k] = (((math.sqrt(2)*sp.erfinv(val))/ math.sqrt(L))+1)
     return thresh
     
-def Local_Statistics_mapping(nodes,distances, attempt):
+def Local_Statistics_mapping(nodes,distances, attempt,hi):
     signal_mapping = dict()
     for k,v in distances.items():
-        y = generate_Pu_signal(v,attempt)
+        y = generate_Pu_signal(v,attempt,hi[k])
         energy = pow(abs(y),2)
         # generate the statistic_test
         Statistic_test = np.sum(energy)*(1/L)
@@ -497,4 +495,11 @@ def generate_local_decisions(local_statistics_mapping,thresh,node_number):
             decisions_mapping[k].append(0)
     return decisions_mapping
 
+def generate_hi(nodes):
+    hi = dict()
+    h = np.random.normal(0,1,nodes)
+    
+    for i in range(0,nodes):
+        hi[i] = h[i]
+    return hi
         
